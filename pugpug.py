@@ -1,12 +1,18 @@
 #!/usr/bin/env python3.3
 """
-Pugpug - Database migration helper.
+Pugpug - Database schema migration helper for Postgres.
+
+Pugpug is uses sha1s of the schema of each table to keep track of versions.
+Pugpug keeps state in the ./pugpug/ directory along with all migration sql
+and snapshots at each step.
 
 Usage:
 	pugpug.py <db> init [--force]
 	pugpug.py <db> check
 	pugpug.py <db> add <FILE> <comment>...
-	pugpug.py <db> migrate (<slug>)
+	pugpug.py <db> migrate [<slug>]
+	pugpug.py <db> history
+	pugpug.py <db> show [<slug>]
 """
 
 # TODO: support for parallel workflow migrations. Also, deleting tables and merging migrations.
@@ -80,7 +86,7 @@ class PugPugPG(object):
 		return dict(sql=sql, sha=string_sha(sql))
 
 	def run_sql(self, filename):
-		subprocess.check_output((PSQL_PATH, self.db, '-f', filename))
+		subprocess.check_call((PSQL_PATH, self.db, '-f', filename))
 
 
 class PugPugState(object):
@@ -205,6 +211,9 @@ class PugPugState(object):
 		query_sha = self.snap_sha(self.snap_to_shas(db_snap))
 		return self.simple_starts.get(query_sha,None)
 
+	def get_slugs(self):
+		return sorted(self.seq.keys())
+
 	def find_next_migration_advanced(self, db_snap):
 		db_shas = self.snap_to_shas(db_snap)
 		tables = set(db_snap.keys())|set(self.tables.keys())
@@ -322,20 +331,36 @@ class PugPug(object):
 		self.state.load_all()
 
 		if self.state.is_up_to_date(db_snap):
-			print("Up to date.")
+			print(color_seq(fg='green')+"Up to date."+color_seq())
 			return None
 		else:
 			next = self.state.find_next_migration_simple(db_snap)
 			if(next):
-				print("Next migration (simple): %s" % next)
+				args = dict(n=next, blue=color_seq(fg='blue'),reset=color_seq(),)
+				print("Next migration (simple): %(blue)s%(n)s%(reset)s" % args)
 				return next
 			next = self.state.find_next_migration_advanced(db_snap)
 			if(next):
 				print("Non-linearizable migrations.")
 				return next
-			print("No migrations found.")
+			print("No matching migrations found.")
 			return False
 
+	def history(self):
+		self.state.load_all()
+		slugs = self.state.get_slugs()
+		print("Showing known migrations:")
+		for slug in self.state.get_slugs():
+			print(" * %s%s%s" % (color_seq(fg='blue',attr='bright'),slug,color_seq(),))
+
+	def show(self, slug=None):
+		if not slug:
+			self.state.load_all()
+			slug = self.state.get_slugs()[-1]
+		print("Showing %s%s%s" % (color_seq(fg='blue',attr='bright'),slug,color_seq(),))
+		#print("-- File: ",self.state.get_file(slug))
+		subprocess.check_call(('cat', self.state.get_file(slug)))
+		print("\n\n")
 
 if __name__ == "__main__":
 	args = docopt(__doc__, version='Project.py concept.')
@@ -351,6 +376,10 @@ if __name__ == "__main__":
 		m.add(args['<FILE>'], comment=comment)
 	elif args['migrate']:
 		m.migrate(slug=args['<slug>'])
+	elif args['history']:
+		m.history()
+	elif args['show']:
+		m.show(slug=args['<slug>'])
 	else:
 		print("whatever.")
 
