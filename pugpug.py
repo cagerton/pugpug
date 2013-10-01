@@ -266,7 +266,7 @@ class PugPug(object):
 		self.state = PugPugState()
 
 	def mk_slug(self, comment):
-		dt = datetime.now().strftime("%Y-%M-%d_%H-%M-%S-")
+		dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-")
 		return slugify(dt+comment[0:40])
 
 	def init(self, force=False):
